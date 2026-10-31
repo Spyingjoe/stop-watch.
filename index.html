@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1720">
+<title>Site Change Timer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Site Timer">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root{
+    --bg:#0f1720; --card:#17212c; --line:#253241; --text:#eef3f7; --muted:#93a4b5;
+    --ok:#3ccf91; --warn:#f5b041; --bad:#ff5d5d; --accent:#5aa9ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  body{padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);}
+  main{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  h1{font-size:20px;margin:4px 0 0;font-weight:650}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+  .ring-wrap{position:relative;width:240px;height:240px;margin:6px auto 4px}
+  .ring-wrap svg{transform:rotate(-90deg)}
+  .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .status{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .big{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1;margin:4px 0}
+  .small{font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);font-size:15px}
+  .row:first-child{border-top:0}
+  .row span:first-child{color:var(--muted)}
+  .row span:last-child{text-align:right;font-weight:600}
+  label{display:block;font-size:14px;color:var(--muted);margin:12px 0 6px}
+  input{width:100%;font-size:17px;padding:12px;border-radius:12px;border:1px solid var(--line);background:#0c131b;color:var(--text)}
+  .inline{display:flex;gap:10px}
+  .inline > div{flex:1}
+  button,.btn{display:block;width:100%;font-size:17px;font-weight:650;padding:15px;border-radius:14px;border:0;cursor:pointer;text-align:center;text-decoration:none}
+  .primary{background:var(--accent);color:#06121f}
+  .secondary{background:#223041;color:var(--text)}
+  .danger{background:transparent;color:var(--bad);border:1px solid #4a2a2f}
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .note{font-size:13px;color:var(--muted);line-height:1.45}
+  .hidden{display:none !important}
+  .banner{border-radius:14px;padding:12px 14px;font-size:15px;font-weight:600}
+  .banner.warn{background:#3a2c10;color:var(--warn)}
+  .banner.bad{background:#3d1517;color:var(--bad)}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:#223041;padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .confirm{display:flex;gap:10px}
+  .confirm button{flex:1}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Site Change Timer</h1>
+    <p class="sub">Counts real elapsed time, so changing time zones never affects it. Works offline once added to your home screen.</p>
+  </div>
+
+  <!-- SETUP -->
+  <section id="setup" class="card">
+    <label for="hours">How long can the site stay in?</label>
+    <div class="inline">
+      <div><input id="hours" type="number" inputmode="numeric" min="0" placeholder="0" aria-label="Hours"><div class="note" style="margin-top:4px">hours</div></div>
+      <div><input id="mins" type="number" inputmode="numeric" min="0" max="59" placeholder="0" aria-label="Minutes"><div class="note" style="margin-top:4px">minutes</div></div>
+    </div>
+    <label for="startAt">Connected at</label>
+    <input id="startAt" type="datetime-local">
+    <p class="note">Leave as now if you just connected it. If you connected earlier, set the time it went in (in the time zone your phone is on right now).</p>
+    <div class="stack" style="margin-top:14px">
+      <button id="startBtn" class="primary">Start countdown</button>
+    </div>
+  </section>
+
+  <!-- RUNNING -->
+  <section id="running" class="hidden stack">
+    <div id="banner" class="banner hidden"></div>
+    <div class="card">
+      <div class="ring-wrap">
+        <svg width="240" height="240" viewBox="0 0 240 240">
+          <circle cx="120" cy="120" r="106" fill="none" stroke="#253241" stroke-width="14"/>
+          <circle id="arc" cx="120" cy="120" r="106" fill="none" stroke="#3ccf91" stroke-width="14" stroke-linecap="round"
+                  stroke-dasharray="666" stroke-dashoffset="0"/>
+        </svg>
+        <div class="ring-center">
+          <div class="status" id="statusLbl">Time left</div>
+          <div class="big" id="bigTime">--:--</div>
+          <div class="small" id="smallTime"></div>
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <div class="row"><span>Change by</span><span id="endLocal">—</span></div>
+        <div class="row"><span>Phone time zone</span><span id="tzName">—</span></div>
+        <div class="row"><span>Connected</span><span id="startLocal">—</span></div>
+        <div class="row"><span>Elapsed</span><span id="elapsed">—</span></div>
+      </div>
+    </div>
+
+    <div class="card stack">
+      <div style="font-weight:650">Get a reminder when the app is closed</div>
+      <p class="note" style="margin:0">A web page can't ring an alarm while it's closed. A calendar event can, and it moves correctly when the phone changes time zone.</p>
+      <a id="icsLink" class="btn primary" href="#" download="change-pump-site.ics">Add to phone calendar</a>
+      <a id="gcalLink" class="btn secondary" href="#" target="_blank" rel="noopener">Add to Google Calendar</a>
+      <button id="copyBtn" class="secondary">Copy change-by time</button>
+      <p class="note" style="margin:0">"Add to phone calendar" makes an event with two alerts: 2 hours before and at the limit. If it doesn't open on your phone, copy the time and make the event by hand, with an alert, while the phone is still on the current time zone.</p>
+    </div>
+
+    <div class="stack">
+      <button id="resetBtn" class="danger">New site / reset</button>
+      <div id="confirmBox" class="confirm hidden">
+        <button id="cancelReset" class="secondary">Keep timer</button>
+        <button id="doReset" class="primary" style="background:var(--bad);color:#fff">Reset</button>
+      </div>
+    </div>
+  </section>
+
+  <p class="note">A reminder aid only. Always follow the instructions for her pump and infusion set.</p>
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  var KEY = "siteTimer.v1";
+  var state = null;          // {start: ms, durationMs: ms}
+  var dbRef = null;
+  var $ = function(id){ return document.getElementById(id); };
+  var CIRC = 2*Math.PI*106;
+  $("arc").setAttribute("stroke-dasharray", CIRC.toFixed(1));
+
+  function pad(n){ return (n<10?"0":"")+n; }
+  function toLocalInput(ms){
+    var d = new Date(ms);
+    return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())+"T"+pad(d.getHours())+":"+pad(d.getMinutes());
+  }
+  function fmtDate(ms){
+    try {
+      return new Date(ms).toLocaleString(undefined,{weekday:"short",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"});
+    } catch(e){ return new Date(ms).toString(); }
+  }
+  function tzLabel(){
+    var name = "";
+    try { name = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch(e){}
+    var off = -new Date().getTimezoneOffset();
+    var sign = off>=0?"+":"-"; off=Math.abs(off);
+    var utc = "UTC"+sign+Math.floor(off/60)+(off%60?":"+pad(off%60):"");
+    return (name ? name.replace(/_/g," ")+" " : "")+"("+utc+")";
+  }
+  function dur(ms){
+    ms = Math.max(0, ms);
+    var s = Math.floor(ms/1000), d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60), sec = s%60;
+    return {d:d,h:h,m:m,s:sec,totalH:Math.floor(s/3600)};
+  }
+  function toast(msg){ var t=$("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(function(){t.classList.remove("show");},1800); }
+
+  // ---------- storage (on this phone) ----------
+  function saveLocal(){
+    try { if (state) localStorage.setItem(KEY, JSON.stringify(state)); else localStorage.removeItem(KEY); } catch(e){}
+  }
+  function loadLocal(){
+    try { var v = JSON.parse(localStorage.getItem(KEY)||"null"); if (v && v.start && v.durationMs) return v; } catch(e){}
+    return null;
+  }
+  // ---------- UI ----------
+  function showSetup(){
+    $("setup").classList.remove("hidden"); $("running").classList.add("hidden");
+    $("startAt").value = toLocalInput(Date.now());
+  }
+  function updateStartLabel(){
+    var h = parseInt($("hours").value,10)||0, m = parseInt($("mins").value,10)||0;
+    $("startBtn").textContent = (h||m) ? "Start "+(h?h+"h":"")+(h&&m?" ":"")+(m?m+"m":"")+" countdown" : "Start countdown";
+  }
+  $("hours").addEventListener("input", updateStartLabel);
+  $("mins").addEventListener("input", updateStartLabel);
+
+  $("startBtn").addEventListener("click", function(){
+    var h = parseInt($("hours").value,10)||0, m = parseInt($("mins").value,10)||0;
+    var durationMs = (h*60+m)*60000;
+    if (durationMs <= 0) { toast("Enter a length of time"); return; }
+    var start = Date.now();
+    var v = $("startAt").value;
+    if (v) { var p = new Date(v).getTime(); if (!isNaN(p)) start = Math.min(p, Date.now()); }
+    state = {start:start, durationMs:durationMs};
+    saveLocal(); render();
+  });
+
+  $("resetBtn").addEventListener("click", function(){ $("confirmBox").classList.remove("hidden"); $("resetBtn").classList.add("hidden"); });
+  $("cancelReset").addEventListener("click", function(){ $("confirmBox").classList.add("hidden"); $("resetBtn").classList.remove("hidden"); });
+  $("doReset").addEventListener("click", function(){
+    state = null; saveLocal();
+    $("confirmBox").classList.add("hidden"); $("resetBtn").classList.remove("hidden");
+    render();
+  });
+
+  $("copyBtn").addEventListener("click", function(){
+    if (!state) return;
+    var end = state.start + state.durationMs;
+    var text = "Change pump site by "+fmtDate(end)+" ("+tzLabel()+") — "+new Date(end).toISOString().replace(".000","");
+    try {
+      navigator.clipboard.writeText(text).then(function(){ toast("Copied"); }, function(){ toast(text); });
+    } catch(e){ toast(text); }
+  });
+
+  function gcalUrl(){
+    var end = state.start + state.durationMs;
+    var f = function(ms){ return new Date(ms).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,""); };
+    var params = "action=TEMPLATE&text="+encodeURIComponent("Change pump site")+
+      "&dates="+f(end)+"/"+f(end+15*60000)+
+      "&details="+encodeURIComponent("Site connected "+new Date(state.start).toISOString()+". Limit reached at this time.");
+    return "https://calendar.google.com/calendar/render?"+params;
+  }
+
+  function icsUrl(){
+    var end = state.start + state.durationMs;
+    var f = function(ms){ return new Date(ms).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,""); };
+    var lines = [
+      "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Site Change Timer//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      "UID:site-"+state.start+"@site-change-timer",
+      "DTSTAMP:"+f(Date.now()),
+      "DTSTART:"+f(end),
+      "DTEND:"+f(end+15*60000),
+      "SUMMARY:Change pump site",
+      "DESCRIPTION:Site connected "+new Date(state.start).toISOString()+". Time limit reached.",
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:Pump site: 2 hours left","TRIGGER:-PT2H","END:VALARM",
+      "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:Change pump site now","TRIGGER:PT0M","END:VALARM",
+      "END:VEVENT","END:VCALENDAR"
+    ];
+    return "data:text/calendar;charset=utf-8,"+encodeURIComponent(lines.join("\r\n"));
+  }
+
+  var lastStatic = "";
+  function render(){
+    if (!state) { showSetup(); return; }
+    $("setup").classList.add("hidden"); $("running").classList.remove("hidden");
+    var now = Date.now(), end = state.start + state.durationMs, left = end - now;
+    var frac = Math.min(1, Math.max(0, left / state.durationMs));
+    var arc = $("arc");
+    arc.setAttribute("stroke-dashoffset", (CIRC*(1-frac)).toFixed(1));
+    var banner = $("banner");
+    if (left <= 0) {
+      var over = dur(-left);
+      $("statusLbl").textContent = "Overdue by";
+      $("bigTime").textContent = over.totalH+"h "+pad(over.m)+"m";
+      $("smallTime").textContent = pad(over.s)+"s";
+      arc.setAttribute("stroke","#ff5d5d");
+      banner.className = "banner bad"; banner.textContent = "Time limit reached — change the site now.";
+    } else {
+      var r = dur(left);
+      $("statusLbl").textContent = "Time left";
+      $("bigTime").textContent = r.totalH+"h "+pad(r.m)+"m";
+      $("smallTime").textContent = (r.d ? r.d+" day"+(r.d>1?"s ":" ")+r.h+"h · " : "")+pad(r.s)+"s";
+      if (left < 2*3600000) {
+        arc.setAttribute("stroke","#f5b041");
+        banner.className = "banner warn"; banner.textContent = "Less than 2 hours left.";
+      } else {
+        arc.setAttribute("stroke","#3ccf91");
+        banner.className = "banner hidden";
+      }
+    }
+    var el = dur(now - state.start);
+    $("elapsed").textContent = el.totalH+"h "+pad(el.m)+"m";
+    // static parts (cheap to recompute, but only touch DOM when changed — e.g. after a time-zone change)
+    var st = tzLabel()+"|"+state.start+"|"+state.durationMs;
+    if (st !== lastStatic) {
+      lastStatic = st;
+      $("endLocal").textContent = fmtDate(end);
+      $("startLocal").textContent = fmtDate(state.start);
+      $("tzName").textContent = tzLabel();
+      $("gcalLink").href = gcalUrl();
+      $("icsLink").href = icsUrl();
+    }
+  }
+
+  state = loadLocal();
+  render();
+  updateStartLabel();
+  setInterval(render, 1000);
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden) render(); });
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
+  // ask the browser not to clear saved data
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){}
+})();
+</script>
+</body>
+</html>
